@@ -2,169 +2,66 @@ import json
 from pathlib import Path
 
 
-# --------------------------------------------------
-# Paths
-# --------------------------------------------------
-
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-
-PLAYLIST_RAW_FILE = PROJECT_ROOT / "data" / "raw" / "youtube_raw.json"
-
-VIDEO_DETAILS_RAW_FILE = (
-    PROJECT_ROOT / "data" / "raw" / "youtube_video_details_raw.json"
-)
-
+PLAYLIST_FILE = PROJECT_ROOT / "data" / "raw" / "youtube_raw.json"
+DETAILS_FILE = PROJECT_ROOT / "data" / "raw" / "youtube_video_details_raw.json"
 OUTPUT_FILE = PROJECT_ROOT / "data" / "processed" / "youtube_merged.json"
 
 
-# --------------------------------------------------
-# 1. Load playlist raw data
-# --------------------------------------------------
+def load_json(path):
+    if not path.exists():
+        raise FileNotFoundError(f"File not found: {path}")
 
-if not PLAYLIST_RAW_FILE.exists():
-    raise FileNotFoundError(f"Playlist raw file not found: {PLAYLIST_RAW_FILE}")
-
-
-with open(
-    PLAYLIST_RAW_FILE,
-    "r",
-    encoding="utf-8",
-) as file:
-    playlist_raw = json.load(file)
+    with path.open("r", encoding="utf-8") as file:
+        return json.load(file)
 
 
-# --------------------------------------------------
-# 2. Load video details raw data
-# --------------------------------------------------
+def main():
+    playlist_data = load_json(PLAYLIST_FILE)
+    details_data = load_json(DETAILS_FILE)
 
-if not VIDEO_DETAILS_RAW_FILE.exists():
-    raise FileNotFoundError(
-        f"Video details raw file not found: {VIDEO_DETAILS_RAW_FILE}"
-    )
+    details_by_id = {}
+    for page in details_data.get("videoPages", []):
+        for item in page.get("items", []):
+            if item.get("id"):
+                details_by_id[item["id"]] = item
 
+    merged = []
 
-with open(
-    VIDEO_DETAILS_RAW_FILE,
-    "r",
-    encoding="utf-8",
-) as file:
-    video_details_raw = json.load(file)
+    for page in playlist_data.get("playlistPages", []):
+        for playlist_item in page.get("items", []):
+            video_id = playlist_item.get("contentDetails", {}).get("videoId")
+            if not video_id:
+                continue
 
+            detail = details_by_id.get(video_id, {})
+            snippet = detail.get("snippet", {})
+            playlist_snippet = playlist_item.get("snippet", {})
+            content = detail.get("contentDetails", {})
+            statistics = detail.get("statistics", {})
 
-# --------------------------------------------------
-# 3. Build lookup table for video details
-# --------------------------------------------------
+            merged.append(
+                {
+                    "videoId": video_id,
+                    "title": snippet.get("title", playlist_snippet.get("title")),
+                    "publishedAt": snippet.get(
+                        "publishedAt", playlist_snippet.get("publishedAt")
+                    ),
+                    "duration": content.get("duration"),
+                    "viewCount": statistics.get("viewCount"),
+                    "likeCount": statistics.get("likeCount"),
+                    "commentCount": statistics.get("commentCount"),
+                }
+            )
 
-video_details_lookup = {}
+    OUTPUT_FILE.parent.mkdir(parents=True, exist_ok=True)
 
+    with OUTPUT_FILE.open("w", encoding="utf-8") as file:
+        json.dump(merged, file, ensure_ascii=False, indent=4)
 
-for page in video_details_raw.get("videoPages", []):
-    for item in page.get("items", []):
-        video_id = item.get("id")
-
-        if video_id:
-            video_details_lookup[video_id] = item
-
-
-print(f"Loaded details for {len(video_details_lookup)} videos")
-
-
-# --------------------------------------------------
-# 4. Merge playlist + video details
-# --------------------------------------------------
-
-merged_videos = []
-
-
-for page in playlist_raw.get("playlistPages", []):
-    for playlist_item in page.get("items", []):
-        content_details = playlist_item.get(
-            "contentDetails",
-            {},
-        )
-
-        playlist_snippet = playlist_item.get(
-            "snippet",
-            {},
-        )
-
-        video_id = content_details.get("videoId")
-
-        if not video_id:
-            continue
-
-        video_detail = video_details_lookup.get(
-            video_id,
-            {},
-        )
-
-        video_snippet = video_detail.get(
-            "snippet",
-            {},
-        )
-
-        video_content_details = video_detail.get(
-            "contentDetails",
-            {},
-        )
-
-        statistics = video_detail.get(
-            "statistics",
-            {},
-        )
-
-        merged_video = {
-            "videoId": video_id,
-            "title": video_snippet.get(
-                "title",
-                playlist_snippet.get("title"),
-            ),
-            "publishedAt": video_snippet.get(
-                "publishedAt",
-                playlist_snippet.get("publishedAt"),
-            ),
-            "duration": video_content_details.get("duration"),
-            "viewCount": statistics.get("viewCount"),
-            "likeCount": statistics.get("likeCount"),
-            "commentCount": statistics.get("commentCount"),
-        }
-
-        merged_videos.append(merged_video)
+    print(f"Merged videos: {len(merged)}")
+    print(f"Saved to: {OUTPUT_FILE}")
 
 
-# --------------------------------------------------
-# 5. Create output directory
-# --------------------------------------------------
-
-OUTPUT_FILE.parent.mkdir(
-    parents=True,
-    exist_ok=True,
-)
-
-
-# --------------------------------------------------
-# 6. Save merged JSON
-# --------------------------------------------------
-
-with open(
-    OUTPUT_FILE,
-    "w",
-    encoding="utf-8",
-) as file:
-    json.dump(
-        merged_videos,
-        file,
-        ensure_ascii=False,
-        indent=4,
-    )
-
-
-# --------------------------------------------------
-# 7. Summary
-# --------------------------------------------------
-
-print()
-print("Merge complete")
-print(f"Playlist videos: {len(merged_videos)}")
-print(f"Video details: {len(video_details_lookup)}")
-print(f"Saved to: {OUTPUT_FILE}")
+if __name__ == "__main__":
+    main()

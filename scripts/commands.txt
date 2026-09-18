@@ -1,0 +1,40 @@
+# Setup
+cp .env.example .env
+nvim .env
+docker compose up -d --build
+
+# Health
+docker compose ps
+./scripts/test_pipeline.sh check
+./scripts/test_pipeline.sh dag-check
+./scripts/test_pipeline.sh celery
+
+# Individual phases
+./scripts/test_pipeline.sh task1
+./scripts/test_pipeline.sh task2
+./scripts/test_pipeline.sh task3
+./scripts/test_pipeline.sh task4
+./scripts/test_pipeline.sh task5
+
+# Full manual pipeline
+./scripts/test_pipeline.sh manual
+
+# Airflow pipeline
+./scripts/test_pipeline.sh trigger
+./scripts/test_pipeline.sh runs
+
+# Data checks
+./scripts/test_pipeline.sh files
+./scripts/test_pipeline.sh postgres
+
+# PostgreSQL shell
+docker exec -it postgres psql -U yt_api_user -d elt_db
+
+# Logs
+./scripts/test_pipeline.sh logs
+
+# Stop containers
+docker compose down
+
+# Stop and delete database volume (destructive)
+docker compose down -v
